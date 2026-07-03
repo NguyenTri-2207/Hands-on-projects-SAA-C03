@@ -1,0 +1,122 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Financial Audit Agent — Orchestration stack.
+  Step Functions state machine and S3 event notification.
+
+Parameters:
+  Environment:
+    Type: String
+  ProjectName:
+    Type: String
+  JobsTableName:
+    Type: String
+  InputBucketName:
+    Type: String
+  IngestTriggerArn:
+    Type: String
+  DocumentExtractorArn:
+    Type: String
+  AgentOrchestratorArn:
+    Type: String
+  ReportGeneratorArn:
+    Type: String
+  StepFunctionsRoleArn:
+    Type: String
+
+Resources:
+  AuditStateMachine:
+    Type: AWS::StepFunctions::StateMachine
+    Properties:
+      StateMachineName: !Sub '${ProjectName}-${Environment}-orchestrator'
+      RoleArn: !Ref StepFunctionsRoleArn
+      DefinitionString: !Sub |
+        {
+          "Comment": "Financial Audit Agent workflow",
+          "StartAt": "ExtractDocument",
+          "States": {
+            "ExtractDocument": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${DocumentExtractorArn}",
+                "Payload.$": "$"
+              },
+              "ResultPath": "$.extractResult",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 3,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "HandleFailure"
+                }
+              ],
+              "Next": "AgentAudit"
+            },
+            "AgentAudit": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${AgentOrchestratorArn}",
+                "Payload.$": "$"
+              },
+              "ResultPath": "$.auditResult",
+              "Retry": [
+                {
+                  "ErrorEquals": ["Lambda.ServiceException", "Lambda.TooManyRequestsException"],
+                  "IntervalSeconds": 2,
+                  "MaxAttempts": 5,
+                  "BackoffRate": 2
+                }
+              ],
+              "Catch": [
+                {
+                  "ErrorEquals": ["States.ALL"],
+                  "ResultPath": "$.error",
+                  "Next": "HandleFailure"
+                }
+              ],
+              "Next": "GenerateReport"
+            },
+            "GenerateReport": {
+              "Type": "Task",
+              "Resource": "arn:aws:states:::lambda:invoke",
+              "Parameters": {
+                "FunctionName": "${ReportGeneratorArn}",
+                "Payload.$": "$"
+              },
+              "ResultPath": "$.reportResult",
+              "End": true
+            },
+            "HandleFailure": {
+              "Type": "Pass",
+              "Result": {"status": "FAILED"},
+              "ResultPath": "$.finalStatus",
+              "End": true
+            }
+          }
+        }
+
+  # S3 event notification: configure in Phase 4 via storage stack update or CLI.
+  # Cross-stack bucket notification cannot reference bucket created in StorageStack
+  # without Custom Resource. See RUNBOOK.md — Test End-to-End section.
+  IngestTriggerPermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref IngestTriggerArn
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+      SourceArn: !Sub 'arn:aws:s3:::${InputBucketName}'
+
+Outputs:
+  StateMachineArn:
+    Value: !Ref AuditStateMachine
+  StateMachineName:
+    Value: !GetAtt AuditStateMachine.Name

@@ -1,0 +1,5 @@
+{
+  "Environment": "dev",
+  "ProjectName": "financial-audit-agent",
+  "BedrockModelId": "anthropic.claude-sonnet-4-20250514-v1:0"
+}

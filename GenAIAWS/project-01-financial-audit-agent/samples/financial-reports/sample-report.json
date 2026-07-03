@@ -1,0 +1,74 @@
+{
+  "$schema": "financial-audit-agent/extracted/v1",
+  "jobId": "sample-001",
+  "sourceFile": "sample-report.json",
+  "period": "Q4-2025",
+  "currency": "USD",
+  "lineItems": [
+    {
+      "id": "rev-total",
+      "category": "Income Statement",
+      "label": "Total Revenue",
+      "value": 1500000,
+      "parentId": null
+    },
+    {
+      "id": "rev-product",
+      "category": "Income Statement",
+      "label": "Product Revenue",
+      "value": 1200000,
+      "parentId": "rev-total"
+    },
+    {
+      "id": "rev-service",
+      "category": "Income Statement",
+      "label": "Service Revenue",
+      "value": 300000,
+      "parentId": "rev-total"
+    },
+    {
+      "id": "assets-current",
+      "category": "Balance Sheet",
+      "label": "Current Assets",
+      "value": 800000,
+      "parentId": null
+    },
+    {
+      "id": "liab-current",
+      "category": "Balance Sheet",
+      "label": "Current Liabilities",
+      "value": 533333,
+      "parentId": null
+    },
+    {
+      "id": "equity-total",
+      "category": "Balance Sheet",
+      "label": "Total Equity",
+      "value": 2000000,
+      "parentId": null
+    },
+    {
+      "id": "net-income",
+      "category": "Income Statement",
+      "label": "Net Income",
+      "value": 250000,
+      "parentId": null
+    }
+  ],
+  "priorPeriod": {
+    "rev-total": 1400000,
+    "assets-current": 750000,
+    "liab-current": 500000
+  },
+  "reportedRatios": {
+    "current_ratio": 1.48,
+    "roe": 0.125
+  },
+  "metadata": {
+    "extractedAt": "2026-07-03T00:00:00Z",
+    "parser": "sample",
+    "parserVersion": "1.0",
+    "warnings": [],
+    "note": "DUMMY DATA — all values are fictional for testing only"
+  }
+}

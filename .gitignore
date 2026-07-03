@@ -1,0 +1,97 @@
+# AWS credentials & secrets
+.env
+.env.*
+.env.local
+*.pem
+*.ppk
+.aws/
+credentials
+secrets.json
+**/secrets/
+*.tfvars
+!*.tfvars.example
+
+# CloudFormation / IaC outputs & state
+cfn-outputs/
+*.cfn-output.json
+.terraform/
+*.tfstate
+*.tfstate.*
+cdk.out/
+.aws-sam/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.Python
+venv/
+.venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Node / Frontend (AIAgentAWS, future Next.js apps)
+node_modules/
+dist/
+build/
+.next/
+out/
+.npm
+*.tsbuildinfo
+
+# Playwright / E2E (AIAgentAWS)
+test-results/
+playwright-report/
+playwright/.cache/
+blob-report/
+
+# Docker local
+docker-compose.override.yml
+
+# IDE (personal — bỏ comment nếu muốn share workspace settings)
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs & temp
+*.log
+logs/
+tmp/
+temp/
+.cache/
+
+# Sample / sensitive data — chỉ commit dummy JSON có sẵn
+GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/*.xlsx
+GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/*.xls
+GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/*.pdf
+GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/*.csv
+!GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/.gitkeep
+!GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/README.md
+!GenAIAWS/project-01-financial-audit-agent/samples/financial-reports/sample-report.json
+
+# Prod parameters — không commit config thật
+**/parameters/prod.json
+!**/parameters/prod.json.example
+
+# Lambda / deployment artifacts
+*.zip
+**/lambda-package/
+**/dist-lambda/
+
+# Portfolio media — file lớn giữ local, commit ảnh nhỏ (<1MB) được
+portfolio/demos/**/*.mp4
+portfolio/demos/**/*.mov
+portfolio/demos/**/raw/
+
+# Personal notes (optional — bỏ nếu muốn commit ghi chú cá nhân)
+_notes/
+**/PRIVATE.md

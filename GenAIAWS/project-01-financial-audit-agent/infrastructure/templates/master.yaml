@@ -1,0 +1,128 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Financial Audit Agent — Master stack.
+  Orchestrates nested stacks for storage, IAM, compute, and orchestration.
+
+Parameters:
+  Environment:
+    Type: String
+    AllowedValues: [dev, prod]
+    Default: dev
+  ProjectName:
+    Type: String
+    Default: financial-audit-agent
+  BedrockModelId:
+    Type: String
+    Description: Bedrock model ID — verify in console before deploy
+    Default: anthropic.claude-sonnet-4-20250514-v1:0
+
+Resources:
+  StorageStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./storage.yaml
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  BedrockIamStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: StorageStack
+    Properties:
+      TemplateURL: ./bedrock-iam.yaml
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        BedrockModelId: !Ref BedrockModelId
+        JobsTableArn: !GetAtt StorageStack.Outputs.JobsTableArn
+        InputBucketArn: !GetAtt StorageStack.Outputs.InputBucketArn
+        StagingBucketArn: !GetAtt StorageStack.Outputs.StagingBucketArn
+        OutputBucketArn: !GetAtt StorageStack.Outputs.OutputBucketArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  ComputeStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: BedrockIamStack
+    Properties:
+      TemplateURL: ./compute.yaml
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        BedrockModelId: !Ref BedrockModelId
+        JobsTableName: !GetAtt StorageStack.Outputs.JobsTableName
+        InputBucketName: !GetAtt StorageStack.Outputs.InputBucketName
+        StagingBucketName: !GetAtt StorageStack.Outputs.StagingBucketName
+        OutputBucketName: !GetAtt StorageStack.Outputs.OutputBucketName
+        LambdaExecutionRoleArn: !GetAtt BedrockIamStack.Outputs.LambdaExecutionRoleArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  OrchestrationStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: ComputeStack
+    Properties:
+      TemplateURL: ./orchestration.yaml
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        JobsTableName: !GetAtt StorageStack.Outputs.JobsTableName
+        InputBucketName: !GetAtt StorageStack.Outputs.InputBucketName
+        IngestTriggerArn: !GetAtt ComputeStack.Outputs.IngestTriggerArn
+        DocumentExtractorArn: !GetAtt ComputeStack.Outputs.DocumentExtractorArn
+        AgentOrchestratorArn: !GetAtt ComputeStack.Outputs.AgentOrchestratorArn
+        ReportGeneratorArn: !GetAtt ComputeStack.Outputs.ReportGeneratorArn
+        StepFunctionsRoleArn: !GetAtt BedrockIamStack.Outputs.StepFunctionsRoleArn
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+  MonitoringStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn: OrchestrationStack
+    Properties:
+      TemplateURL: ./monitoring.yaml
+      Parameters:
+        Environment: !Ref Environment
+        ProjectName: !Ref ProjectName
+        StateMachineArn: !GetAtt OrchestrationStack.Outputs.StateMachineArn
+        IngestTriggerName: !GetAtt ComputeStack.Outputs.IngestTriggerName
+        AgentOrchestratorName: !GetAtt ComputeStack.Outputs.AgentOrchestratorName
+      Tags:
+        - Key: Project
+          Value: !Ref ProjectName
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  InputBucketName:
+    Description: S3 input bucket for financial report uploads
+    Value: !GetAtt StorageStack.Outputs.InputBucketName
+  StagingBucketName:
+    Description: S3 staging bucket for extracted JSON
+    Value: !GetAtt StorageStack.Outputs.StagingBucketName
+  OutputBucketName:
+    Description: S3 output bucket for audit reports
+    Value: !GetAtt StorageStack.Outputs.OutputBucketName
+  JobsTableName:
+    Description: DynamoDB table for job tracking
+    Value: !GetAtt StorageStack.Outputs.JobsTableName
+  StateMachineArn:
+    Description: Step Functions state machine ARN
+    Value: !GetAtt OrchestrationStack.Outputs.StateMachineArn
+  IngestTriggerArn:
+    Description: Ingest trigger Lambda ARN
+    Value: !GetAtt ComputeStack.Outputs.IngestTriggerArn

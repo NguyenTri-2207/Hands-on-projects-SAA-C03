@@ -1,0 +1,124 @@
+{
+  "tools": [
+    {
+      "toolSpec": {
+        "name": "calculate_financial_ratio",
+        "description": "Calculate a financial ratio from numerator and denominator, then compare with the reported value in the source document. Use for current_ratio, roe, or debt_to_equity.",
+        "inputSchema": {
+          "json": {
+            "type": "object",
+            "properties": {
+              "ratioType": {
+                "type": "string",
+                "enum": ["current_ratio", "roe", "debt_to_equity"],
+                "description": "Type of financial ratio to calculate"
+              },
+              "numerator": {
+                "type": "number",
+                "description": "Numerator value (e.g., Current Assets for current_ratio)"
+              },
+              "denominator": {
+                "type": "number",
+                "description": "Denominator value (e.g., Current Liabilities for current_ratio)"
+              },
+              "reportedValue": {
+                "type": "number",
+                "description": "Value reported in the source financial document for comparison"
+              }
+            },
+            "required": ["ratioType", "numerator", "denominator", "reportedValue"]
+          }
+        }
+      }
+    },
+    {
+      "toolSpec": {
+        "name": "reconcile_line_items",
+        "description": "Verify that child line items sum equals the parent line item total. Use to detect internal inconsistencies in financial statements.",
+        "inputSchema": {
+          "json": {
+            "type": "object",
+            "properties": {
+              "parentId": {
+                "type": "string",
+                "description": "ID of the parent line item"
+              },
+              "parentValue": {
+                "type": "number",
+                "description": "Reported value of the parent line item"
+              },
+              "childIds": {
+                "type": "array",
+                "items": { "type": "string" },
+                "description": "IDs of child line items to sum"
+              }
+            },
+            "required": ["parentId", "parentValue", "childIds"]
+          }
+        }
+      }
+    },
+    {
+      "toolSpec": {
+        "name": "cross_validate_periods",
+        "description": "Compare a metric value between current and prior period to detect anomalous changes.",
+        "inputSchema": {
+          "json": {
+            "type": "object",
+            "properties": {
+              "currentPeriodValue": {
+                "type": "number",
+                "description": "Value in the current reporting period"
+              },
+              "priorPeriodValue": {
+                "type": "number",
+                "description": "Value in the prior reporting period"
+              },
+              "metric": {
+                "type": "string",
+                "description": "Name of the metric being compared (e.g., Total Revenue)"
+              },
+              "tolerancePercent": {
+                "type": "number",
+                "description": "Maximum acceptable change percentage before flagging anomaly (default 50)"
+              }
+            },
+            "required": ["currentPeriodValue", "priorPeriodValue", "metric"]
+          }
+        }
+      }
+    },
+    {
+      "toolSpec": {
+        "name": "generate_audit_finding",
+        "description": "Create a structured audit finding when a discrepancy, missing data, or anomaly is detected.",
+        "inputSchema": {
+          "json": {
+            "type": "object",
+            "properties": {
+              "findingType": {
+                "type": "string",
+                "enum": ["discrepancy", "missing_data", "anomaly"],
+                "description": "Category of the finding"
+              },
+              "severity": {
+                "type": "string",
+                "enum": ["minor", "material", "critical"],
+                "description": "Severity level of the finding"
+              },
+              "description": {
+                "type": "string",
+                "description": "Human-readable description of the finding"
+              },
+              "evidence": {
+                "type": "object",
+                "description": "Supporting data (calculated vs reported values, etc.)"
+              }
+            },
+            "required": ["findingType", "severity", "description", "evidence"]
+          }
+        }
+      }
+    }
+  ]
+}

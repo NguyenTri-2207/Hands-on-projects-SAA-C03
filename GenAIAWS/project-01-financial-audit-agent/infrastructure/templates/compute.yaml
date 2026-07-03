@@ -1,0 +1,135 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Financial Audit Agent — Compute stack.
+  Lambda functions for ingest, extract, orchestrate, calculate, and report.
+
+Parameters:
+  Environment:
+    Type: String
+  ProjectName:
+    Type: String
+  BedrockModelId:
+    Type: String
+  JobsTableName:
+    Type: String
+  InputBucketName:
+    Type: String
+  StagingBucketName:
+    Type: String
+  OutputBucketName:
+    Type: String
+  LambdaExecutionRoleArn:
+    Type: String
+
+Resources:
+  IngestTriggerFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-ingest-trigger'
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Environment:
+        Variables:
+          JOBS_TABLE: !Ref JobsTableName
+          STATE_MACHINE_ARN: !Sub 'arn:aws:states:${AWS::Region}:${AWS::AccountId}:stateMachine:${ProjectName}-${Environment}-orchestrator'
+          INPUT_BUCKET: !Ref InputBucketName
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # TODO: Implement — parse S3 event, create job, start Step Functions
+              return {"statusCode": 200, "body": "placeholder"}
+
+  DocumentExtractorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-document-extractor'
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          INPUT_BUCKET: !Ref InputBucketName
+          STAGING_BUCKET: !Ref StagingBucketName
+          JOBS_TABLE: !Ref JobsTableName
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # TODO: Implement — parse PDF/Excel/JSON → staging JSON
+              return {"statusCode": 200, "body": "placeholder"}
+
+  AgentOrchestratorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-agent-orchestrator'
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          STAGING_BUCKET: !Ref StagingBucketName
+          JOBS_TABLE: !Ref JobsTableName
+          BEDROCK_MODEL_ID: !Ref BedrockModelId
+          CALCULATION_TOOLS_ARN: !Sub 'arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${ProjectName}-${Environment}-calculation-tools'
+          MAX_AGENT_ROUNDS: '10'
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # TODO: Implement — Bedrock Converse + Tool Use loop
+              return {"statusCode": 200, "body": "placeholder"}
+
+  CalculationToolsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-calculation-tools'
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 30
+      MemorySize: 256
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # TODO: Implement — deterministic financial calculations
+              return {"statusCode": 200, "body": "placeholder"}
+
+  ReportGeneratorFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: !Sub '${ProjectName}-${Environment}-report-generator'
+      Runtime: python3.12
+      Handler: handler.lambda_handler
+      Role: !Ref LambdaExecutionRoleArn
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          OUTPUT_BUCKET: !Ref OutputBucketName
+          JOBS_TABLE: !Ref JobsTableName
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              # TODO: Implement — compile audit findings → Markdown report
+              return {"statusCode": 200, "body": "placeholder"}
+
+Outputs:
+  IngestTriggerArn:
+    Value: !GetAtt IngestTriggerFunction.Arn
+  IngestTriggerName:
+    Value: !Ref IngestTriggerFunction
+  DocumentExtractorArn:
+    Value: !GetAtt DocumentExtractorFunction.Arn
+  AgentOrchestratorArn:
+    Value: !GetAtt AgentOrchestratorFunction.Arn
+  AgentOrchestratorName:
+    Value: !Ref AgentOrchestratorFunction
+  CalculationToolsArn:
+    Value: !GetAtt CalculationToolsFunction.Arn
+  ReportGeneratorArn:
+    Value: !GetAtt ReportGeneratorFunction.Arn

@@ -1,0 +1,48 @@
+# Common CloudFormation Tags
+
+Mapping tags chuẩn dùng across tất cả stacks trong monorepo.
+
+## Tag convention
+
+| Key | Value example | Mô tả |
+|-----|---------------|-------|
+| `Project` | `financial-audit-agent` | Tên dự án |
+| `Environment` | `dev` / `prod` | Môi trường |
+| `ManagedBy` | `cloudformation` | IaC tool |
+| `Owner` | `your-name` | Người chịu trách nhiệm |
+| `CostCenter` | `learning` | Phân loại chi phí |
+
+## Sử dụng trong templates
+
+Mỗi template nhận parameters `ProjectName` và `Environment`, map vào `Tags` của resources:
+
+```yaml
+Tags:
+  - Key: Project
+    Value: !Ref ProjectName
+  - Key: Environment
+    Value: !Ref Environment
+  - Key: ManagedBy
+    Value: cloudformation
+```
+
+## Naming convention
+
+```
+{project-name}-{environment}-{resource-type}
+
+Ví dụ:
+financial-audit-agent-dev-input-bucket
+financial-audit-agent-dev-jobs-table
+financial-audit-agent-dev-orchestrator
+```
+
+## Stack naming
+
+```
+{project-name}-{environment}
+
+Ví dụ:
+financial-audit-agent-dev          # master stack
+financial-audit-agent-dev-storage  # nested child (auto-prefixed by CFN)
+```

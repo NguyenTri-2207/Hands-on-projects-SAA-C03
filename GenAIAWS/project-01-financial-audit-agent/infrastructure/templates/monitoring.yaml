@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >
+  Financial Audit Agent — Monitoring stack (Phase 5).
+  CloudWatch alarms for Lambda errors and Step Functions failures.
+
+Parameters:
+  Environment:
+    Type: String
+  ProjectName:
+    Type: String
+  StateMachineArn:
+    Type: String
+  IngestTriggerName:
+    Type: String
+  AgentOrchestratorName:
+    Type: String
+
+Resources:
+  AgentOrchestratorErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-agent-errors'
+      AlarmDescription: Agent orchestrator Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref AgentOrchestratorName
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+  StepFunctionsFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-sfn-failures'
+      AlarmDescription: Step Functions execution failures
+      Namespace: AWS/States
+      MetricName: ExecutionsFailed
+      Dimensions:
+        - Name: StateMachineArn
+          Value: !Ref StateMachineArn
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  AgentErrorAlarmName:
+    Value: !Ref AgentOrchestratorErrorAlarm
+  SfnFailureAlarmName:
+    Value: !Ref StepFunctionsFailedAlarm
