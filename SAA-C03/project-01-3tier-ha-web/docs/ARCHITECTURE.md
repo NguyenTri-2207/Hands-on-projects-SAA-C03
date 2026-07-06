@@ -1,6 +1,7 @@
 # Architectural Design Document: 3-Tier Highly Available Web Architecture
 
-> Chưa rõ dự án làm gì? Đọc trước: **[OVERVIEW.md](OVERVIEW.md)**
+> Chưa rõ dự án làm gì? Đọc trước: **[OVERVIEW.md](OVERVIEW.md)**  
+> Diagram Draw.io: **[diagrams/3tier-ha-architecture.drawio](diagrams/3tier-ha-architecture.drawio)**
 
 ## 📊 Overview & Structural Layout
 

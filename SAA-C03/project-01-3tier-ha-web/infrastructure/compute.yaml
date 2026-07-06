@@ -1,0 +1,290 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: "3-Tier HA Web Architecture - Compute and Security Tier (ALB, ASG, Launch Template)"
+
+Parameters:
+  NetworkStackName:
+    Type: String
+    Default: project-3tier-ha-vpc
+    Description: Name of the deployed VPC/network CloudFormation stack (for Fn::ImportValue)
+
+  InstanceType:
+    Type: String
+    Default: t2.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+    Description: EC2 instance type for the web tier (t2.micro is Free Tier eligible)
+
+Resources:
+  # ---------------------------------------------------------------------------
+  # 1. SECURITY GROUPS (cascading: ALB -> Web App)
+  # ---------------------------------------------------------------------------
+  AlbSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow inbound HTTP/HTTPS from the internet for the ALB
+      GroupName: 3tier-ha-alb-sg
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP from anywhere
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS from anywhere
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound (ALB to targets and health checks)
+      Tags:
+        - Key: Name
+          Value: 3tier-ha-alb-sg
+
+  WebAppSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow inbound HTTP only from the ALB security group
+      GroupName: 3tier-ha-web-app-sg
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          SourceSecurityGroupId: !Ref AlbSecurityGroup
+          Description: HTTP from ALB security group only
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+          Description: Allow all outbound via NAT Gateway (updates, APIs, etc.)
+      Tags:
+        - Key: Name
+          Value: 3tier-ha-web-app-sg
+
+  # ---------------------------------------------------------------------------
+  # 2. IAM ROLE (SSM Session Manager - no SSH key pair)
+  # ---------------------------------------------------------------------------
+  Ec2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub "${AWS::StackName}-ec2-ssm-role"
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Tags:
+        - Key: Name
+          Value: 3tier-ha-ec2-ssm-role
+
+  Ec2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub "${AWS::StackName}-ec2-ssm-profile"
+      Roles:
+        - !Ref Ec2InstanceRole
+
+  # ---------------------------------------------------------------------------
+  # 3. APPLICATION LOAD BALANCER
+  # ---------------------------------------------------------------------------
+  ApplicationLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: 3tier-ha-alb
+      Scheme: internet-facing
+      Type: application
+      IpAddressType: ipv4
+      Subnets:
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PublicSubnetA"
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PublicSubnetB"
+      SecurityGroups:
+        - !Ref AlbSecurityGroup
+      Tags:
+        - Key: Name
+          Value: 3tier-ha-alb
+
+  AppTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: 3tier-ha-app-tg
+      Port: 80
+      Protocol: HTTP
+      VpcId: !ImportValue
+        Fn::Sub: "${NetworkStackName}-VpcId"
+      TargetType: instance
+      HealthCheckEnabled: true
+      HealthCheckProtocol: HTTP
+      HealthCheckPath: /
+      HealthCheckIntervalSeconds: 30
+      HealthCheckTimeoutSeconds: 5
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 3
+      Matcher:
+        HttpCode: "200"
+      Tags:
+        - Key: Name
+          Value: 3tier-ha-app-tg
+
+  HttpListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 80
+      Protocol: HTTP
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref AppTargetGroup
+
+  # ---------------------------------------------------------------------------
+  # 4. EC2 LAUNCH TEMPLATE (Amazon Linux 2023 + Apache + IMDSv2)
+  # ---------------------------------------------------------------------------
+  AppLaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: 3tier-ha-app-template
+      LaunchTemplateData:
+        ImageId: !Sub
+          - "{{resolve:ssm:${AmiPath}}}"
+          - AmiPath: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+        InstanceType: !Ref InstanceType
+        IamInstanceProfile:
+          Arn: !GetAtt Ec2InstanceProfile.Arn
+        NetworkInterfaces:
+          - DeviceIndex: 0
+            AssociatePublicIpAddress: false
+            Groups:
+              - !Ref WebAppSecurityGroup
+            DeleteOnTermination: true
+        MetadataOptions:
+          HttpEndpoint: enabled
+          HttpTokens: required
+          HttpPutResponseHopLimit: 1
+        TagSpecifications:
+          - ResourceType: instance
+            Tags:
+              - Key: Name
+                Value: 3tier-ha-app-server
+        UserData:
+          Fn::Base64: |
+            #!/bin/bash
+            # Update the system repository to fetch latest patches
+            dnf update -y
+
+            # Install Apache Web Server (httpd)
+            dnf install -y httpd
+
+            # Start and enable Apache service to persist across reboots
+            systemctl start httpd
+            systemctl enable httpd
+
+            # Fetch the instance metadata token for AWS IMDSv2 (Security compliance)
+            TOKEN=$(curl -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")
+
+            # Extract the specific Availability Zone where this EC2 instance resides
+            AZ=$(curl -H "X-aws-ec2-metadata-token: $TOKEN" -s http://169.254.169.254/latest/meta-data/placement/availability-zone)
+
+            # Create a highly dynamic index.html to display production tier status
+            cat <<EOF > /var/www/html/index.html
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>3-Tier HA Architecture Showcase</title>
+                <style>
+                    body { font-family: Arial, sans-serif; text-align: center; margin-top: 100px; background-color: #f4f6f9; }
+                    .card { background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); display: inline-block; }
+                    h1 { color: #232f3e; }
+                    .status { color: #2ecc71; font-weight: bold; }
+                    .az-box { background-color: #ff9900; color: white; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
+                </style>
+            </head>
+            <body>
+                <div class="card">
+                    <h1>🚀 3-Tier Web Application is LIVE!</h1>
+                    <p>This dynamic response is generated from the <strong>Private Application Tier</strong>.</p>
+                    <p>Current Serving Availability Zone: <span class="az-box">$AZ</span></p>
+                    <p>Infrastructure Health Status: <span class="status">HEALTHY (200 OK)</span></p>
+                </div>
+            </body>
+            </html>
+            EOF
+
+  # ---------------------------------------------------------------------------
+  # 5. AUTO SCALING GROUP
+  # ---------------------------------------------------------------------------
+  AppAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      AutoScalingGroupName: 3tier-ha-asg
+      LaunchTemplate:
+        LaunchTemplateId: !Ref AppLaunchTemplate
+        Version: !GetAtt AppLaunchTemplate.LatestVersionNumber
+      MinSize: 2
+      MaxSize: 4
+      DesiredCapacity: 2
+      VPCZoneIdentifier:
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PrivateSubnetA"
+        - !ImportValue
+          Fn::Sub: "${NetworkStackName}-PrivateSubnetB"
+      TargetGroupARNs:
+        - !Ref AppTargetGroup
+      HealthCheckType: ELB
+      HealthCheckGracePeriod: 300
+      Tags:
+        - Key: Name
+          Value: 3tier-ha-asg-instance
+          PropagateAtLaunch: true
+
+Outputs:
+  AlbDnsName:
+    Description: DNS name of the internet-facing Application Load Balancer
+    Value: !GetAtt ApplicationLoadBalancer.DNSName
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbDnsName"
+
+  AlbArn:
+    Description: ARN of the Application Load Balancer
+    Value: !Ref ApplicationLoadBalancer
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbArn"
+
+  AppTargetGroupArn:
+    Description: ARN of the ALB target group
+    Value: !Ref AppTargetGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-AppTargetGroupArn"
+
+  AlbSecurityGroupId:
+    Description: Security group ID for the ALB
+    Value: !Ref AlbSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-AlbSecurityGroupId"
+
+  WebAppSecurityGroupId:
+    Description: Security group ID for web tier EC2 instances (use for RDS ingress)
+    Value: !Ref WebAppSecurityGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-WebAppSecurityGroupId"
+
+  AutoScalingGroupName:
+    Description: Name of the web tier Auto Scaling Group
+    Value: !Ref AppAutoScalingGroup
+    Export:
+      Name: !Sub "${AWS::StackName}-AutoScalingGroupName"
+
+  LaunchTemplateId:
+    Description: ID of the EC2 launch template
+    Value: !Ref AppLaunchTemplate
+    Export:
+      Name: !Sub "${AWS::StackName}-LaunchTemplateId"
